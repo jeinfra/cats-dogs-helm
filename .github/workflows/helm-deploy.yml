@@ -52,7 +52,6 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
-          # Transfer chart
           sshpass -e scp -o StrictHostKeyChecking=no cats-dogs-*.tgz $VM_USER@$VM_HOST:~/cats-dogs/
 
       - name: Deploy
@@ -65,53 +64,43 @@ jobs:
           sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "
             cd ~/cats-dogs
             
+            # Cleanup old releases if they exist
+            if helm list | grep -q '$HELM_RELEASE_NAME'; then
+              echo 'Cleaning up old release...'
+              helm uninstall $HELM_RELEASE_NAME || true
+              kubectl delete pvc -l app.kubernetes.io/name=cats-dogs || true
+              sleep 10
+            fi
+            
+            # Force cleanup any stuck pods
+            kubectl delete pod -l app.kubernetes.io/name=cats-dogs --force --grace-period=0 2>/dev/null || true
+            
             # Docker image check and build
             if ! docker images cats-dogs:v1 | grep -q cats-dogs; then
               echo 'Building Docker image...'
               docker build -t cats-dogs:v1 .
             else
-              echo 'Docker image cats-dogs:v1 exists'
+              echo 'Docker image exists, forcing rebuild...'
+              docker build -t cats-dogs:v1 . --no-cache
             fi
-            
-            # Clean up any failed deployments
-            kubectl delete pod -l app.kubernetes.io/name=cats-dogs --force --grace-period=0 2>/dev/null || true
-            
-            # Helm deployment with updated values
-            if helm list | grep -q '$HELM_RELEASE_NAME'; then
-              echo 'Upgrading existing release...'
-              helm upgrade $HELM_RELEASE_NAME cats-dogs-*.tgz \
-                --set image.repository=cats-dogs \
-                --set image.tag=v1 \
-                --set service.type=NodePort \
-                --set service.nodePort=$NODE_PORT \
-                --set persistence.enabled=true \
-                --set persistence.storageClass=standard \
-                --set metrics.enabled=false \
-                --set metrics.serviceMonitor.enabled=false \
-                --set securityContext.readOnlyRootFilesystem=false \
-                --set securityContext.runAsUser=1000 \
-                --set securityContext.runAsGroup=1000 \
-                --set securityContext.allowPrivilegeEscalation=false \
-                --wait \
-                --timeout 5m
-            else
-              echo 'Installing new release...'
-              helm install $HELM_RELEASE_NAME cats-dogs-*.tgz \
-                --set image.repository=cats-dogs \
-                --set image.tag=v1 \
-                --set service.type=NodePort \
-                --set service.nodePort=$NODE_PORT \
-                --set persistence.enabled=true \
-                --set persistence.storageClass=standard \
-                --set metrics.enabled=false \
-                --set metrics.serviceMonitor.enabled=false \
-                --set securityContext.readOnlyRootFilesystem=false \
-                --set securityContext.runAsUser=1000 \
-                --set securityContext.runAsGroup=1000 \
-                --set securityContext.allowPrivilegeEscalation=false \
-                --wait \
-                --timeout 5m
-            fi
+
+            echo 'Installing new release...'
+            helm install $HELM_RELEASE_NAME cats-dogs-*.tgz \
+              --set image.repository=cats-dogs \
+              --set image.tag=v1 \
+              --set service.type=NodePort \
+              --set service.nodePort=$NODE_PORT \
+              --set persistence.enabled=true \
+              --set persistence.storageClass=standard \
+              --set metrics.enabled=false \
+              --set metrics.serviceMonitor.enabled=false \
+              --set securityContext.readOnlyRootFilesystem=false \
+              --set securityContext.runAsUser=1000 \
+              --set securityContext.runAsGroup=1000 \
+              --set securityContext.allowPrivilegeEscalation=false \
+              --wait \
+              --timeout 5m \
+              --debug
           "
 
       - name: Verify Deployment
@@ -124,14 +113,32 @@ jobs:
           echo "Checking deployment status..."
           sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST '
             echo "Pod Status:"
-            kubectl get pods -l app.kubernetes.io/name=cats-dogs
+            kubectl get pods -l app.kubernetes.io/name=cats-dogs -o wide
+            
             echo -e "\nPod Details:"
             kubectl describe pod -l app.kubernetes.io/name=cats-dogs
+            
             echo -e "\nContainer Logs:"
-            POD_NAME=$(kubectl get pods -l app.kubernetes.io/name=cats-dogs -o jsonpath="{.items[0].metadata.name}")
-            kubectl logs $POD_NAME || true
+            for pod in $(kubectl get pods -l app.kubernetes.io/name=cats-dogs -o name); do
+              echo "=== Logs for $pod ==="
+              kubectl logs $pod --all-containers || true
+            done
+            
             echo -e "\nService Details:"
             kubectl get svc -l app.kubernetes.io/name=cats-dogs
+            
             echo -e "\nPersistent Volume Claims:"
             kubectl get pvc -l app.kubernetes.io/name=cats-dogs
+            
+            echo -e "\nEndpoints:"
+            kubectl get endpoints -l app.kubernetes.io/name=cats-dogs
+            
+            echo -e "\nApplication URL:"
+            echo "http://$(hostname -I | cut -d" " -f1):$NODE_PORT"
           '
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "Deployment completed. Check the logs above for details."
+          echo "If deployment failed, you can check the pod logs and events in the Verify Deployment step."

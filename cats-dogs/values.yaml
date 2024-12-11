@@ -23,7 +23,7 @@ securityContext:
   capabilities:
     drop:
     - ALL
-  readOnlyRootFilesystem: true
+  readOnlyRootFilesystem: false
   runAsNonRoot: true
   runAsUser: 1000
   allowPrivilegeEscalation: false
@@ -33,18 +33,6 @@ service:
   type: NodePort
   port: 80
   nodePort: 30080
-
-# Ingress Configuration
-ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: cats-dogs.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
 
 # Resource limits
 resources:
@@ -66,7 +54,7 @@ autoscaling:
 # Persistence Configuration
 persistence:
   enabled: true
-  storageClass: ""
+  storageClass: "standard"
   accessMode: ReadWriteOnce
   size: 1Gi
 
@@ -92,9 +80,8 @@ networkPolicy:
   enabled: true
   allowedIngresses: []
 
-# Monitoring
 metrics:
-  enabled: true
+  enabled: false
   serviceMonitor:
-    enabled: true
+    enabled: false
     interval: 15s
