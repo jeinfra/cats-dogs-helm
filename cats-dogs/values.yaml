@@ -16,10 +16,11 @@ serviceAccount:
 podAnnotations: {}
 
 securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  allowPrivilegeEscalation: false
+  runAsNonRoot: false
+  runAsUser: 0
+  allowPrivilegeEscalation: true
 
+podSecurityContext: {}
 # Service Configuration
 service:
   type: NodePort
