@@ -61,10 +61,26 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: nginx-config
+              mountPath: /etc/nginx
+            - name: nginx-temp
+              mountPath: /var/lib/nginx
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-pid
+              mountPath: /var/run/nginx
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "cats-dogs.fullname" . }}-pvc
+        - name: nginx-config
+          emptyDir: {}
+        - name: nginx-temp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-pid
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

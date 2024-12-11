@@ -26,6 +26,7 @@ securityContext:
   readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 1000
+  allowPrivilegeEscalation: false
 
 # Service Configuration
 service:
