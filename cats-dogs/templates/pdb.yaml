@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "cats-dogs.fullname" . }}
+  labels:
+    {{- include "cats-dogs.labels" . | nindent 4 }}
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      {{- include "cats-dogs.selectorLabels" . | nindent 6 }}
