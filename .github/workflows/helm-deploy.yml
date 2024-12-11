@@ -1,4 +1,3 @@
-# .github/workflows/helm-deploy.yaml
 name: Deploy Helm Chart
 
 on:
@@ -83,7 +82,9 @@ jobs:
                 --set service.type=NodePort \
                 --set service.nodePort=$NODE_PORT \
                 --set persistence.enabled=true \
-                --set persistence.storageClass=standard
+                --set persistence.storageClass=standard \
+                --set metrics.enabled=false \
+                --set metrics.serviceMonitor.enabled=false
             else
               echo 'Installing new release...'
               helm install $HELM_RELEASE_NAME cats-dogs-*.tgz \
@@ -92,7 +93,9 @@ jobs:
                 --set service.type=NodePort \
                 --set service.nodePort=$NODE_PORT \
                 --set persistence.enabled=true \
-                --set persistence.storageClass=standard
+                --set persistence.storageClass=standard \
+                --set metrics.enabled=false \
+                --set metrics.serviceMonitor.enabled=false
             fi
           "
 
