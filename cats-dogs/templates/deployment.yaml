@@ -22,5 +22,13 @@ spec:
             - name: http
               containerPort: 5000
               protocol: TCP
+          env:
+            - name: FLASK_APP
+              value: /app/main.py
+          args:
+            - flask
+            - run
+            - --host=0.0.0.0
+            - --port=5000
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
