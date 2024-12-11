@@ -16,9 +16,7 @@ serviceAccount:
 podAnnotations: {}
 
 securityContext:
-  runAsNonRoot: false
   runAsUser: 0
-  allowPrivilegeEscalation: true
 
 podSecurityContext: {}
 # Service Configuration
