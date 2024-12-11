@@ -37,55 +37,44 @@ jobs:
         run: |
           helm package cats-dogs/
 
-      - name: Transfer and Deploy
+      - name: Setup SSH
+        env:
+          SSHPASS: ${{ secrets.VM_PASSWORD }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          sshpass -e ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Transfer Files
+        env:
+          SSHPASS: ${{ secrets.VM_PASSWORD }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+        run: |
+          # Transfer chart
+          sshpass -e scp -o StrictHostKeyChecking=no cats-dogs-*.tgz $VM_USER@$VM_HOST:~/cats-dogs/
+
+      - name: Deploy
         env:
           SSHPASS: ${{ secrets.VM_PASSWORD }}
           VM_HOST: ${{ secrets.VM_HOST }}
           VM_USER: ${{ secrets.VM_USER }}
           NODE_PORT: ${{ secrets.NODE_PORT }}
         run: |
-          # Create .ssh directory and set permissions
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          
-          # Add VM to known hosts
-          sshpass -e ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-          
-          # Transfer chart
-          sshpass -e scp -o StrictHostKeyChecking=no cats-dogs-*.tgz $VM_USER@$VM_HOST:~/cats-dogs/
-          
-          # Execute deployment commands
           sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "
             cd ~/cats-dogs
             
-            # Hash the Dockerfile to check for changes
-            CURRENT_HASH=$(md5sum Dockerfile | cut -d" " -f1)
-            HASH_FILE=.dockerfile_hash
-            
-            # Check if we need to rebuild
-            NEED_BUILD=false
-            if [ ! -f "$HASH_FILE" ]; then
-                NEED_BUILD=true
-                echo "No previous build hash found"
-            elif [ "$(cat $HASH_FILE)" != "$CURRENT_HASH" ]; then
-                NEED_BUILD=true
-                echo "Dockerfile has changed"
-            elif ! docker images cats-dogs:v1 | grep -q cats-dogs; then
-                NEED_BUILD=true
-                echo "Image not found in local registry"
-            fi
-            
-            # Build if needed
-            if [ "$NEED_BUILD" = true ]; then
-                echo "Building Docker image..."
-                docker build -t cats-dogs:v1 .
-                echo "$CURRENT_HASH" > "$HASH_FILE"
+            # Docker image check and build
+            if ! docker images cats-dogs:v1 | grep -q cats-dogs; then
+              echo 'Building Docker image...'
+              docker build -t cats-dogs:v1 .
             else
-                echo "Docker image cats-dogs:v1 is up to date"
+              echo 'Docker image cats-dogs:v1 exists'
             fi
             
-            # Check if release exists and install/upgrade accordingly
+            # Helm deployment
             if helm list | grep -q '$HELM_RELEASE_NAME'; then
               echo 'Upgrading existing release...'
               helm upgrade $HELM_RELEASE_NAME cats-dogs-*.tgz \
