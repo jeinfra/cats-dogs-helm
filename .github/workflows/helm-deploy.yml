@@ -1,3 +1,4 @@
+# .github/workflows/helm-deploy.yaml
 name: Deploy Helm Chart
 
 on:
@@ -43,8 +44,13 @@ jobs:
           VM_USER: ${{ secrets.VM_USER }}
           NODE_PORT: ${{ secrets.NODE_PORT }}
         run: |
+          # Create .ssh directory and set permissions
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
           # Add VM to known hosts
           sshpass -e ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           
           # Transfer chart
           sshpass -e scp -o StrictHostKeyChecking=no cats-dogs-*.tgz $VM_USER@$VM_HOST:~/cats-dogs/
