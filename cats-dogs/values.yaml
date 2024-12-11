@@ -15,8 +15,7 @@ serviceAccount:
 
 podAnnotations: {}
 
-securityContext:
-  runAsUser: 0
+securityContext: {}
 
 podSecurityContext: {}
 # Service Configuration
