@@ -1,0 +1,119 @@
+name: Deploy Helm Chart
+
+on:
+  push:
+    paths:
+      - 'cats-dogs/**'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      HELM_RELEASE_NAME: cats-dogs
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Install sshpass
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: Lint Helm Chart
+        run: |
+          helm lint cats-dogs/
+
+      - name: Package Helm Chart
+        run: |
+          helm package cats-dogs/
+
+      - name: Transfer and Deploy
+        env:
+          SSHPASS: ${{ secrets.VM_PASSWORD }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          NODE_PORT: ${{ secrets.NODE_PORT }}
+        run: |
+          # Add VM to known hosts
+          sshpass -e ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
+          
+          # Transfer chart
+          sshpass -e scp -o StrictHostKeyChecking=no cats-dogs-*.tgz $VM_USER@$VM_HOST:~/cats-dogs/
+          
+          # Execute deployment commands
+          sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "
+            cd ~/cats-dogs
+            
+            # Hash the Dockerfile to check for changes
+            CURRENT_HASH=$(md5sum Dockerfile | cut -d" " -f1)
+            HASH_FILE=.dockerfile_hash
+            
+            # Check if we need to rebuild
+            NEED_BUILD=false
+            if [ ! -f "$HASH_FILE" ]; then
+                NEED_BUILD=true
+                echo "No previous build hash found"
+            elif [ "$(cat $HASH_FILE)" != "$CURRENT_HASH" ]; then
+                NEED_BUILD=true
+                echo "Dockerfile has changed"
+            elif ! docker images cats-dogs:v1 | grep -q cats-dogs; then
+                NEED_BUILD=true
+                echo "Image not found in local registry"
+            fi
+            
+            # Build if needed
+            if [ "$NEED_BUILD" = true ]; then
+                echo "Building Docker image..."
+                docker build -t cats-dogs:v1 .
+                echo "$CURRENT_HASH" > "$HASH_FILE"
+            else
+                echo "Docker image cats-dogs:v1 is up to date"
+            fi
+            
+            # Check if release exists and install/upgrade accordingly
+            if helm list | grep -q '$HELM_RELEASE_NAME'; then
+              echo 'Upgrading existing release...'
+              helm upgrade $HELM_RELEASE_NAME cats-dogs-*.tgz \
+                --set image.repository=cats-dogs \
+                --set image.tag=v1 \
+                --set service.type=NodePort \
+                --set service.nodePort=$NODE_PORT \
+                --set persistence.enabled=true \
+                --set persistence.storageClass=standard
+            else
+              echo 'Installing new release...'
+              helm install $HELM_RELEASE_NAME cats-dogs-*.tgz \
+                --set image.repository=cats-dogs \
+                --set image.tag=v1 \
+                --set service.type=NodePort \
+                --set service.nodePort=$NODE_PORT \
+                --set persistence.enabled=true \
+                --set persistence.storageClass=standard
+            fi
+          "
+
+      - name: Verify Deployment
+        if: always()
+        env:
+          SSHPASS: ${{ secrets.VM_PASSWORD }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+        run: |
+          echo "Checking deployment status..."
+          sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST '
+            echo "Pod Status:"
+            kubectl get pods -l app.kubernetes.io/name=cats-dogs
+            echo -e "\nService Details:"
+            kubectl get svc -l app.kubernetes.io/name=cats-dogs
+            echo -e "\nPersistent Volume Claims:"
+            kubectl get pvc -l app.kubernetes.io/name=cats-dogs
+          '
